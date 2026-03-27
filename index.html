@@ -289,6 +289,8 @@ const RHO = 1.225; // air density
 const G   = 9.81;
 const WS  = 12;    // world scale (px per meter)
 const DT  = 1/60;
+const LAUNCH_X = 120;
+const SINGULARITY_DISTANCE_M = 70;
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
 let W, H, groundY;
@@ -330,6 +332,10 @@ function terrainNormal(wx) {
   const slope = (y2 - y1) / (2*dx);
   const len = Math.hypot(1, slope);
   return { nx: -slope/len, ny: 1/len };
+}
+
+function getSingularityCenter() {
+  return { x: LAUNCH_X + SINGULARITY_DISTANCE_M * WS, y: H * 0.5 };
 }
 
 function resize() {
@@ -397,7 +403,7 @@ function launch() {
   const p  = +$('power').value;
   const a  = (+$('angle').value) * Math.PI / 180;
   const sp = +$('spin').value;
-  const sx = 120;
+  const sx = LAUNCH_X;
   const sy = terrainY(sx) - 4;
   const vx = p * Math.cos(a);
   const vy = -p * Math.sin(a);
@@ -429,8 +435,10 @@ function updatePrediction() {
   const a    = (+$('angle').value) * Math.PI / 180;
   const sp   = +$('spin').value;
   const wnd  = +$('wind').value;
+  const bhOn = $('bhMode').checked;
+  const singularity = getSingularityCenter();
 
-  let x  = 120, y  = terrainY(120) - 4;
+  let x  = LAUNCH_X, y  = terrainY(LAUNCH_X) - 4;
   let vx = p * Math.cos(a), vy = -p * Math.sin(a);
   prediction = [{x,y}];
 
@@ -442,6 +450,12 @@ function updatePrediction() {
     let ax = -(Fd * rvx / rspd) / cfg.mass;
     let ay = G - (Fd * rvy / rspd) / cfg.mass;
     ay -= (sp * vx * 0.08) / cfg.mass;  // magnus
+    if(bhOn) {
+      const dx = singularity.x - x, dy = singularity.y - y;
+      const dist2 = Math.max(200, dx*dx + dy*dy);
+      const f = 9000 / dist2;
+      ax += dx * f; ay += dy * f;
+    }
 
     vx += ax * DT; vy += ay * DT;
     x  += vx * DT * WS; y  += vy * DT * WS;
@@ -454,6 +468,7 @@ function updatePrediction() {
 updatePrediction();
 $('ballType').onchange = updatePrediction;
 $('collMode').onchange = updatePrediction;
+$('bhMode').onchange = updatePrediction;
 
 // ─── PHYSICS STEP ─────────────────────────────────────────────────────────────
 function stepBall(b, wnd, bhOn, quantum) {
@@ -468,8 +483,8 @@ function stepBall(b, wnd, bhOn, quantum) {
   ay -= (b.spin * b.vx * 0.08) / b.mass; // magnus
 
   if(bhOn) {
-    const cx = cameraX + W/2, cy = H/2;
-    const dx = cx - b.x, dy = cy - b.y;
+    const singularity = getSingularityCenter();
+    const dx = singularity.x - b.x, dy = singularity.y - b.y;
     const dist2 = Math.max(200, dx*dx + dy*dy);
     const f = 9000 / dist2;
     ax += dx * f; ay += dy * f;
@@ -556,8 +571,8 @@ function drawBall(b, rot) {
 let cannonFlash = 0; // 0..1, bright muzzle flash on launch
 
 function drawCannon() {
-  const cx = 120;
-  const cy = terrainY(120);
+  const cx = LAUNCH_X;
+  const cy = terrainY(LAUNCH_X);
   const angle = -(+$('angle').value) * Math.PI / 180;
 
   // barrel length & width
@@ -771,6 +786,43 @@ function drawCelestials() {
   ctx.fillStyle = sg; ctx.beginPath(); ctx.arc(whx,why,26,0,Math.PI*2); ctx.fill();
 }
 
+function drawSingularityField() {
+  const singularity = getSingularityCenter();
+  const pulse = 0.5 + 0.5 * Math.sin(t * 0.06);
+
+  ctx.save();
+  for(let i = 0; i < 4; i++) {
+    const ringR = 20 + i * 12 + pulse * 4;
+    ctx.beginPath();
+    ctx.arc(singularity.x, singularity.y, ringR, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(255,120,80,${0.22 - i * 0.04})`;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+
+  const glow = ctx.createRadialGradient(singularity.x, singularity.y, 0, singularity.x, singularity.y, 72);
+  glow.addColorStop(0, 'rgba(255,110,80,0.4)');
+  glow.addColorStop(0.45, 'rgba(160,60,200,0.14)');
+  glow.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(singularity.x, singularity.y, 72, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.arc(singularity.x, singularity.y, 12, 0, Math.PI * 2);
+  ctx.fillStyle = '#020205';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,180,120,0.7)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  ctx.fillStyle = 'rgba(255,210,160,0.82)';
+  ctx.font = '11px Share Tech Mono';
+  ctx.fillText(`${SINGULARITY_DISTANCE_M}m`, singularity.x + 18, singularity.y - 10);
+  ctx.restore();
+}
+
 // ─── DRAW WIND STREAKS ───────────────────────────────────────────────────────
 const windParticles = Array.from({length:25},() => ({x:Math.random()*3000, y:Math.random()*400+200, alpha:Math.random()}));
 function drawWind(wnd) {
@@ -834,7 +886,7 @@ function drawPrediction() {
   ctx.strokeStyle = 'rgba(255,180,0,0.7)'; ctx.lineWidth = 1.5; ctx.setLineDash([]);
   ctx.beginPath(); ctx.moveTo(lp.x-8,lp.y-8); ctx.lineTo(lp.x+8,lp.y+8); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(lp.x+8,lp.y-8); ctx.lineTo(lp.x-8,lp.y+8); ctx.stroke();
-  const dm = Math.round((lp.x - 120)/WS);
+  const dm = Math.round((lp.x - LAUNCH_X)/WS);
   ctx.fillStyle = 'rgba(255,200,80,0.75)'; ctx.font = '10px Share Tech Mono';
   ctx.fillText(`${dm}m`, lp.x+12, lp.y-2);
   ctx.restore();
@@ -880,7 +932,21 @@ function loop() {
 
   // camera
   const main = balls[0];
-  if(main) {
+  if(bhOn && main) {
+    const singularity = getSingularityCenter();
+    const followTarget = main.active ? Math.max(0, main.x - W * 0.38) : Math.max(0, cameraX);
+    const centerTarget = Math.max(0, singularity.x - W * 0.5);
+    const focusBand = W * 0.22;
+    let target = followTarget;
+
+    if(main.x < singularity.x - focusBand) {
+      target = Math.min(followTarget, centerTarget);
+    } else if(main.x <= singularity.x + focusBand) {
+      target = centerTarget;
+    }
+
+    cameraX += (target - cameraX) * 0.1;
+  } else if(main) {
     const target = main.active ? Math.max(0, main.x - W*0.38) : 0;
     cameraX += (target - cameraX) * 0.1;
   }
@@ -893,6 +959,7 @@ function loop() {
 
   drawWind(wnd);
   drawTerrain();
+  if(bhOn) drawSingularityField();
 
   // prediction (only before or after)
   if(!main || !main.active) drawPrediction();
@@ -934,6 +1001,7 @@ function loop() {
   ctx.translate(lx,ly); ctx.scale(2.8,2.8); ctx.translate(-(lx+cameraX), -ly);
   // redraw terrain & balls in lens space
   drawTerrain();
+  if(bhOn) drawSingularityField();
   balls.forEach(b => {
     if(b.trail.length<2) return;
     for(let i=1;i<b.trail.length;i++){
@@ -967,7 +1035,7 @@ function loop() {
   // ── STATS ──
   if(main) {
     const spd = Math.hypot(main.vx, main.vy);
-    $('s-dist').textContent  = Math.max(0, Math.round((main.x-120)/WS));
+    $('s-dist').textContent  = Math.max(0, Math.round((main.x-LAUNCH_X)/WS));
     $('s-vel').textContent   = Math.round(spd);
     $('s-temp').textContent  = Math.round(main.temp);
 
