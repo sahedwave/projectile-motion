@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
 <title>Trajectory Lab</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@300;500;700&display=swap');
@@ -19,8 +19,8 @@
   }
 
   * { box-sizing: border-box; }
-  body { margin:0; background: var(--bg); font-family: 'Rajdhani', sans-serif; color: #cce; overflow: hidden; user-select: none; }
-  canvas { display: block; cursor: crosshair; }
+  body { margin:0; min-height:100vh; min-height:100dvh; background: var(--bg); font-family: 'Rajdhani', sans-serif; color: #cce; overflow: hidden; user-select: none; }
+  canvas { display: block; cursor: crosshair; touch-action: none; }
 
   /* ─── DRAWER TOGGLE ─── */
   #toggle-btn {
@@ -134,12 +134,100 @@
     pointer-events: none;
   }
   @keyframes fadeHint { 0%{opacity:0} 10%{opacity:1} 70%{opacity:1} 100%{opacity:0} }
+
+  #stats-toggle-btn {
+    display: none;
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    z-index: 30;
+    background: var(--panel);
+    border: 1px solid rgba(0,212,255,0.35);
+    color: var(--neon);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 2px;
+    padding: 8px 14px;
+    border-radius: 20px;
+    box-shadow: 0 0 12px rgba(0,212,255,0.15);
+  }
+
+  #touch-launch-btn {
+    display: none;
+    position: absolute;
+    right: 12px;
+    bottom: 14px;
+    z-index: 34;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    border: 1px solid rgba(255,106,0,0.36);
+    background: linear-gradient(135deg, rgba(255,106,0,0.96), rgba(255,174,0,0.92));
+    color: #fff;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 18px;
+    box-shadow: 0 0 22px rgba(255,106,0,0.28);
+  }
+
+  @media (max-width: 700px) {
+    #stats-toggle-btn {
+      display: block;
+      top: max(10px, calc(env(safe-area-inset-top) + 6px));
+      right: 10px;
+    }
+    #toggle-btn {
+      top: max(10px, calc(env(safe-area-inset-top) + 6px));
+      left: 10px;
+      padding: 8px 12px;
+    }
+
+    #panel {
+      left: 10px;
+      right: 10px;
+      top: 50px;
+      width: auto;
+    }
+
+    #panel.open {
+      max-height: min(70dvh, 620px);
+    }
+
+    #energy-panel {
+      left: 10px;
+      right: 10px;
+      bottom: max(10px, env(safe-area-inset-bottom));
+      width: auto;
+    }
+
+    #touch-launch-btn {
+      display: grid;
+      place-items: center;
+      right: 10px;
+      bottom: max(16px, calc(env(safe-area-inset-bottom) + 6px));
+    }
+
+    #hint {
+      bottom: max(92px, calc(env(safe-area-inset-bottom) + 78px));
+      width: calc(100vw - 24px);
+      text-align: center;
+    }
+
+    body.hud-hidden .pill,
+    body.hud-hidden #energy-panel,
+    body.hud-hidden #hint {
+      opacity: 0;
+      transform: translateY(10px);
+      pointer-events: none;
+    }
+  }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 
 <button id="toggle-btn">⊞ CONTROLS</button>
+<button id="stats-toggle-btn">◎ HUD</button>
+<button id="touch-launch-btn" type="button">▶</button>
 <div id="panel">
   <div class="section-label">ALLIED</div>
   <div class="section-label">Projectil -[S RAHMAN]e</div>
@@ -251,7 +339,8 @@ function resize() {
   buildTerrain();
 }
 window.addEventListener('resize', resize);
-window.addEventListener('mousemove', e => { mouse.x=e.clientX; mouse.y=e.clientY; });
+window.addEventListener('pointermove', e => { mouse.x=e.clientX; mouse.y=e.clientY; });
+window.addEventListener('pointerdown', e => { mouse.x=e.clientX; mouse.y=e.clientY; });
 resize();
 
 // ─── SLIDERS ──────────────────────────────────────────────────────────────────
@@ -271,6 +360,30 @@ updateWindPill();
 
 // panel toggle
 $('toggle-btn').onclick = () => $('panel').classList.toggle('open');
+function updateHudToggleLabel() {
+  const mobile = window.matchMedia('(max-width: 700px)').matches;
+  $('stats-toggle-btn').textContent = mobile
+    ? (document.body.classList.contains('hud-hidden') ? '◎' : '✕')
+    : (document.body.classList.contains('hud-hidden') ? '◎ HUD' : '✕ HUD');
+}
+$('stats-toggle-btn').onclick = () => {
+  document.body.classList.toggle('hud-hidden');
+  updateHudToggleLabel();
+};
+$('touch-launch-btn').onclick = launch;
+function syncMobileHudUi() {
+  const mobile = window.matchMedia('(max-width: 700px)').matches;
+  $('toggle-btn').textContent = mobile ? '⊞' : '⊞ CONTROLS';
+  $('hint').textContent = mobile ? 'TAP ▶ TO LAUNCH' : 'PRESS SPACE TO LAUNCH';
+  if(mobile){
+    document.body.classList.add('hud-hidden');
+  } else {
+    document.body.classList.remove('hud-hidden');
+  }
+  updateHudToggleLabel();
+}
+syncMobileHudUi();
+window.addEventListener('resize', syncMobileHudUi);
 
 // ─── LAUNCH ───────────────────────────────────────────────────────────────────
 function mkBall(type, x, y, vx, vy, spin) {
